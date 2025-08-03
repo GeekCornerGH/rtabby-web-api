@@ -1,11 +1,10 @@
-name: rTabby
+name: rust-build
 
 on:
   push:
-    branches: [ "master" ]
-    tags: [ 'v*.*.*' ]
+    branches: [ "master", "dev" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master", "dev" ]
   release:
     types: [published]
   workflow_dispatch:
@@ -25,21 +24,67 @@ env:
 jobs:
   build:
     name: Rust Build
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        db: [mysql, sqlite]
+        login: [local-users, oauth]
+        include:
+          #runson
+          - arch: 'amd64'
+            runson: 'ubuntu-22.04'
+            rust-target: 'x86_64-unknown-linux-musl'
+            rust-cc: 'x86_64-linux-musl'
+          - arch: 'arm64'
+            runson: 'ubuntu-22.04-arm'
+            rust-target: 'aarch64-unknown-linux-musl'
+            rust-cc: 'aarch64-linux-musl'
+          # minimal build
+          - login: 'local-users'
+            minimal: true
+            feature: ''
+          - login: 'oauth'
+            minimal: false
+            feature: '-F all-login'
+
+    permissions:
+      contents: read
+
+    runs-on: ${{ matrix.runson }}
     steps:
-    - uses: actions/checkout@v3
-      with:
-        ref: ${{ github.event.inputs.branch || github.ref }}
+    - uses: actions/checkout@v4
+
+    - name: Install mysql build dependencies
+      if: ${{ matrix.db == 'mysql' }}
+      run: sudo apt install libtirpc-dev 
+
+
     - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      run: |
+        sudo apt install gcc musl-tools musl-dev
+        sudo ln -s /usr/bin/${{ matrix.rust-cc }}-gcc /usr/bin/${{ matrix.rust-cc }}-g++
+        rustup target add ${{ matrix.rust-target }}
+        cargo build --verbose --release --target ${{ matrix.rust-target }} --target-dir ci-build --no-default-features -F ${{ matrix.db }}-bundle ${{ matrix.feature }} 
+
+    - name: Upload build binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.arch }}-${{ matrix.db }}-${{ matrix.login }}-rtabby-web-api
+        path: ci-build/release/rtabby-web-api
 
   docker:
     strategy:
       matrix:
         db: [mysql, sqlite]
-        minimal: [true, false]
+        login: [local-users, oauth]
+        include:
+          # minimal build
+          - login: 'local-users'
+            minimal: true
+            feature: ''
+          - login: 'oauth'
+            minimal: false
+            feature: '-F all-login'
     name: Docker
     if: ${{ always() && contains(join(needs.*.result, ','), 'success') }}
     needs: [build]
@@ -57,13 +102,27 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
+      - name: Download amd64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: amd64-${{ matrix.db }}-${{ matrix.login }}-rtabby-web-api
+          path: binary/linux/amd64/rtabby-web-api
+
+      - name: Download arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: arm64-${{ matrix.db }}-${{ matrix.login }}-rtabby-web-api
+          path: binary/linux/arm64/rtabby-web-api
+
       # Install the cosign tool except on PR
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.5.0
         with:
           cosign-release: 'v2.2.4'
 
+
       - name: Set up QEMU
+        # if: ${{ github.event_name == 'release' }}
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -124,4 +183,6 @@ jobs:
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        # This step uses the identity token to provision an ephemeral certificate
+        # against the sigstore community Fulcio instance.
         run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
