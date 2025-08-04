@@ -54,7 +54,6 @@ jobs:
       if: ${{ matrix.db == 'mysql' }}
       run: sudo apt install libtirpc-dev 
 
-
     - name: Build
       run: cargo build --verbose --release --target-dir ci-build --no-default-features -F ${{ matrix.db }}-bundle ${{ matrix.feature }} 
 
@@ -106,20 +105,23 @@ jobs:
           name: arm64-${{ matrix.db }}-${{ matrix.login }}-rtabby-web-api
           path: binary/linux/arm64/rtabby-web-api
 
+      - name: Download amd64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: amd64-${{ matrix.db }}-${{ matrix.login }}-rtabby-web-api
+          path: binary/linux/amd64/rtabby-web-api
+
+      - name: Download arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: arm64-${{ matrix.db }}-${{ matrix.login }}-rtabby-web-api
+          path: binary/linux/arm64/rtabby-web-api
+
       # Install the cosign tool except on PR
       - name: Install cosign
-<<<<<<< HEAD
-        uses: sigstore/cosign-installer@v3.5.0
-        with:
-          cosign-release: 'v2.2.4'
-
-=======
-        if: ${{ github.event_name == 'release' }}
         uses: sigstore/cosign-installer@v3.9.2
->>>>>>> 8ef462a55c56720af3ecaed204e6c1bdb057c73e
 
       - name: Set up QEMU
-        if: ${{ github.event_name == 'release' }}
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -166,6 +168,7 @@ jobs:
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
           context: .
+          file: Dockerfile-ci
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
