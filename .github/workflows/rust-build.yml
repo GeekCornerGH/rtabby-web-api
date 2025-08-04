@@ -33,12 +33,8 @@ jobs:
           #runson
           - arch: 'amd64'
             runson: 'ubuntu-22.04'
-            rust-target: 'x86_64-unknown-linux-musl'
-            rust-cc: 'x86_64-linux-musl'
           - arch: 'arm64'
             runson: 'ubuntu-22.04-arm'
-            rust-target: 'aarch64-unknown-linux-musl'
-            rust-cc: 'aarch64-linux-musl'
           # minimal build
           - login: 'local-users'
             minimal: true
@@ -60,11 +56,7 @@ jobs:
 
 
     - name: Build
-      run: |
-        sudo apt install gcc musl-tools musl-dev
-        sudo ln -s /usr/bin/${{ matrix.rust-cc }}-gcc /usr/bin/${{ matrix.rust-cc }}-g++
-        rustup target add ${{ matrix.rust-target }}
-        cargo build --verbose --release --target ${{ matrix.rust-target }} --target-dir ci-build --no-default-features -F ${{ matrix.db }}-bundle ${{ matrix.feature }} 
+      run: cargo build --verbose --release --target-dir ci-build --no-default-features -F ${{ matrix.db }}-bundle ${{ matrix.feature }} 
 
     - name: Upload build binary
       uses: actions/upload-artifact@v4
@@ -116,13 +108,18 @@ jobs:
 
       # Install the cosign tool except on PR
       - name: Install cosign
+<<<<<<< HEAD
         uses: sigstore/cosign-installer@v3.5.0
         with:
           cosign-release: 'v2.2.4'
 
+=======
+        if: ${{ github.event_name == 'release' }}
+        uses: sigstore/cosign-installer@v3.9.2
+>>>>>>> 8ef462a55c56720af3ecaed204e6c1bdb057c73e
 
       - name: Set up QEMU
-        # if: ${{ github.event_name == 'release' }}
+        if: ${{ github.event_name == 'release' }}
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
